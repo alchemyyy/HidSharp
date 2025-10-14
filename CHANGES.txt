@@ -1,4 +1,4 @@
-2.6.4 (October 14, 2025):
+2.6.4 (October 14, 2025): 
   Fixed a bug in how negative physical and logical ranges on HID items are encoded.
   
 2.6.3 (September 26, 2025):
