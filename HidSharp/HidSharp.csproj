@@ -70,6 +70,7 @@
     <Compile Include="DeviceListChangedEventArgs.cs" />
     <Compile Include="DeviceOpenUtility.cs" />
     <Compile Include="DeviceException.cs" />
+    <Compile Include="GetStringFlags.cs" />
     <Compile Include="LocalDeviceList.cs" />
     <Compile Include="ImplementationDetail.cs" />
     <Compile Include="DeviceStream.cs" />
@@ -94,6 +95,8 @@
     <Compile Include="Platform\Windows\WinBleDevice.cs" />
     <Compile Include="Platform\Windows\WinBleService.cs" />
     <Compile Include="Platform\Windows\WinBleStream.cs" />
+    <Compile Include="Platform\Windows\WinDeviceID.cs" />
+    <Compile Include="Platform\Windows\WinDeviceUninstall.cs" />
     <Compile Include="Platform\Windows\WinSerialDevice.cs" />
     <Compile Include="Platform\Windows\WinSerialStream.cs" />
     <Compile Include="Platform\Windows\WinHidDevice.ReportDescriptorReconstructor.cs" />
@@ -158,6 +161,8 @@
     <Compile Include="Reports\Units\TimeUnit.cs" />
     <Compile Include="Reports\Units\Unit.cs" />
     <Compile Include="Reports\Units\UnitSystem.cs" />
+    <Compile Include="DeviceUninstallOptions.cs" />
+    <Compile Include="UsbPort.cs" />
     <Compile Include="Utility\BcdHelper.cs" />
     <Compile Include="Utility\HResult.cs" />
     <Compile Include="Utility\HidSharpDiagnostics.cs" />

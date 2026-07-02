@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2011, 2013 James F. Bellinger <http://software.seekye.com/hidsharp>
+/* Copyright 2024 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -15,21 +15,14 @@
    under the License. */
 #endregion
 
-namespace HidSharp.Reports.Units
-{
-    /// <summary>
-    /// Defines the possible units of time.
-    /// </summary>
-    public enum TimeUnit
-    {
-        /// <summary>
-        /// The unit system has no unit of time.
-        /// </summary>
-        None,
+using System;
 
-        /// <summary>
-        /// The unit of time is seconds.
-        /// </summary>
-        Seconds
+namespace HidSharp
+{
+    [Flags]
+    public enum GetStringFlags
+    {
+        None = 0,
+        Uncached = 1
     }
 }

@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2011, 2013, 2018 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2011, 2013, 2018 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -27,6 +27,8 @@ namespace HidSharp.Reports
     /// </summary>
     public class ReportDescriptor
     {
+        EncodedItem[] _items; // Kept for ToString() and debugging.
+
         /// <summary>
         /// Initializes a new instance of the <see cref="ReportDescriptor"/> class.
         /// </summary>
@@ -59,6 +61,25 @@ namespace HidSharp.Reports
         public Input.HidDeviceInputReceiver CreateHidDeviceInputReceiver()
         {
             return new Input.HidDeviceInputReceiver(this);
+        }
+
+        IEnumerable<string> ToStringGetLines()
+        {
+            int indent = 0;
+
+            foreach (var element in _items)
+            {
+                if (element.ItemType == ItemType.Main && element.TagForMain == MainItemTag.EndCollection) { indent -= 2; }
+
+                yield return new string(' ', indent) + element;
+
+                if (element.ItemType == ItemType.Main && element.TagForMain == MainItemTag.Collection) { indent += 2; }
+            }
+        }
+
+        public override string ToString()
+        {
+            return string.Join("\n", ToStringGetLines().ToArray());
         }
 
         /// <summary>
@@ -118,6 +139,7 @@ namespace HidSharp.Reports
 
             var items = EncodedItem.DecodeItems(buffer, 0, buffer.Length);
             ParseEncodedItems(items);
+            _items = items.ToArray();
         }
 
         /// <summary>
@@ -305,7 +327,11 @@ namespace HidSharp.Reports
             dataItem.ElementCount = (int)State.GetGlobalItemValue(GlobalItemTag.ReportCount);
             dataItem.ElementBits = (int)State.GetGlobalItemValue(GlobalItemTag.ReportSize);
             dataItem.Unit = new Units.Unit(State.GetGlobalItemValue(GlobalItemTag.Unit));
-            dataItem.UnitExponent = Units.Unit.DecodeExponent(State.GetGlobalItemValue(GlobalItemTag.UnitExponent));
+
+            // The USB HID specification is vague about how Unit Exponent is to be encoded -- it refers to 'a later table', but never said which one.
+            // Many people assume it is encoded in four bits like Units. Others encode it as a signed integer. Handle both of these cases.
+            EncodedItem unitExponentItem = State.GetGlobalItem(GlobalItemTag.UnitExponent);
+            dataItem.UnitExponent = unitExponentItem == null ? 0 : (unitExponentItem.DataValue & ~0xf) == 0 ? Units.Unit.DecodeExponent(unitExponentItem.DataValue) : unitExponentItem.DataValueSigned;
 
             EncodedItem logicalMinItem = State.GetGlobalItem(GlobalItemTag.LogicalMinimum);
             EncodedItem logicalMaxItem = State.GetGlobalItem(GlobalItemTag.LogicalMaximum);

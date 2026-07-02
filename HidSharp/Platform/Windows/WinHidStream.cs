@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2012-2013 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2012-2013 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 using System;
 using System.ComponentModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace HidSharp.Platform.Windows
@@ -45,7 +46,7 @@ namespace HidSharp.Platform.Windows
             IntPtr handle = NativeMethods.CreateFileFromDevice(path, NativeMethods.EFileAccess.Read | NativeMethods.EFileAccess.Write, NativeMethods.EFileShare.Read | NativeMethods.EFileShare.Write);
             if (handle == (IntPtr)(-1))
             {
-                throw DeviceException.CreateIOException(Device, "Unable to open HID class device (" + path + ").");
+                throw DeviceException.CreateIOException(Device, "Unable to open HID class device (" + path + ").", Marshal.GetHRForLastWin32Error());
             }
 
             int maxInputBuffers = Environment.OSVersion.Version >= new Version(5, 1) ? 512 : 200; // Windows 2000 supports 200. Windows XP supports 512.

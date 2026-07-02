@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2012-2018 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2012-2018 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -86,16 +86,34 @@ namespace HidSharp.Test
             foreach (Device dev in allDeviceList)
             {
                 Console.WriteLine(dev.ToString() + " @ " + dev.DevicePath);
-                /*
+
                 if (dev is HidDevice)
                 {
-                    foreach (var serialPort in
-                        (((HidDevice)dev).GetSerialPorts()))
+                    var hidDev = (HidDevice)dev;
+
+                    try
                     {
-                        Console.WriteLine("    " + serialPort);
+                        Console.WriteLine("    " + hidDev.GetUsbPort());
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
+                    }
+
+                    string[] serialPorts;
+                    try
+                    {
+                        serialPorts = hidDev.GetSerialPorts();
+                        foreach (var serialPort in serialPorts)
+                        {
+                            Console.WriteLine("    " + serialPort);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+
                     }
                 }
-                */
             }
 
             var bleDeviceList = list.GetBleDevices().ToArray();
@@ -218,7 +236,7 @@ namespace HidSharp.Test
             foreach (HidDevice dev in hidDeviceList)
             {
                 Console.WriteLine(dev.DevicePath);
-                //Console.WriteLine(string.Join(",", dev.GetDevicePathHierarchy())); // TODO
+                Console.WriteLine(dev.GetUsbPort());
                 Console.WriteLine(dev);
 
                 try
@@ -250,17 +268,8 @@ namespace HidSharp.Test
                     Console.WriteLine("Report Descriptor:");
                     Console.WriteLine("  {0} ({1} bytes)", string.Join(" ", rawReportDescriptor.Select(d => d.ToString("X2"))), rawReportDescriptor.Length);
 
-                    int indent = 0;
-                    foreach (var element in EncodedItem.DecodeItems(rawReportDescriptor, 0, rawReportDescriptor.Length))
-                    {
-                        if (element.ItemType == ItemType.Main && element.TagForMain == MainItemTag.EndCollection) { indent -= 2; }
-
-                        Console.WriteLine("  {0}{1}", new string(' ', indent), element);
-
-                        if (element.ItemType == ItemType.Main && element.TagForMain == MainItemTag.Collection) { indent += 2; }
-                    }
-
                     var reportDescriptor = dev.GetReportDescriptor();
+                    Console.WriteLine("  " + dev.GetReportDescriptor().ToString().Replace("\n", "\n  "));
 
                     // Lengths should match.
                     Debug.Assert(dev.GetMaxInputReportLength() == reportDescriptor.MaxInputReportLength);

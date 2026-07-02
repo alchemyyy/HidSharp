@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2012-2013, 2017-2019 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2012-2013, 2017-2019 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -69,6 +69,7 @@ namespace HidSharp.Platform.Linux
 			NVAL = 0x20
 		}
 
+        [StructLayout(LayoutKind.Sequential)]
 		public struct pollfd
 		{
 			public int fd;
@@ -76,21 +77,35 @@ namespace HidSharp.Platform.Linux
 			public pollev revents;
 		}
 
-		public static int retry(Func<int> sysfunc)
+        public static bool ShouldRetry(int ret)
+        {
+            var error = (error)Marshal.GetLastWin32Error();
+            if (ret >= 0 || error != error.EINTR) { return false; }
+            return true;
+        }
+
+        public static bool ShouldRetry(IntPtr ret)
+        {
+            var error = (error)Marshal.GetLastWin32Error();
+            if ((long)ret >= 0 || error != error.EINTR) { return false; }
+            return true;
+        }
+
+		public static int Retry(Func<int> sysfunc)
 		{
 			while (true)
 			{
-                int ret = sysfunc(); var error = (error)Marshal.GetLastWin32Error();
-                if (ret >= 0 || error != error.EINTR) { return ret; }
+                int ret = sysfunc();
+                if (!ShouldRetry(ret)) { return ret; }
 			}
 		}
 
-		public static IntPtr retry(Func<IntPtr> sysfunc)
+		public static IntPtr Retry(Func<IntPtr> sysfunc)
 		{
 			while (true)
 			{
-                IntPtr ret = sysfunc(); var error = (error)Marshal.GetLastWin32Error();
-                if ((long)ret >= 0 || error != error.EINTR) { return ret; }
+                IntPtr ret = sysfunc();
+                if (!ShouldRetry(ret)) { return ret; }
 			}
 		}
 
@@ -141,7 +156,7 @@ namespace HidSharp.Platform.Linux
             sysname = null; release = null;
             return false;
         }
-		
+
 		[DllImport(libc, SetLastError = true)]
 		public static extern int open(
 			[MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))] string filename,
@@ -156,11 +171,8 @@ namespace HidSharp.Platform.Linux
 		[DllImport(libc, SetLastError = true)]
 		public static extern IntPtr write(int filedes, IntPtr buffer, UIntPtr size);
 
-		[DllImport(libc, SetLastError = true)]
-		public static extern int poll(pollfd[] fds, IntPtr nfds, int timeout);
-
         [DllImport(libc, SetLastError = true)]
-        public static extern int poll(ref pollfd fds, IntPtr nfds, int timeout);
+        public unsafe static extern int poll(ref pollfd fds, IntPtr nfds, int timeout);
 
         public static bool TryParseHex(string hex, out int result)
         {

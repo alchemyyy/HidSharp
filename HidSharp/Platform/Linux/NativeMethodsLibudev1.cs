@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2016 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2016 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -116,6 +116,13 @@ namespace HidSharp.Platform.Linux
             native_udev_enumerate_unref(enumerate);
         }
 
+        [DllImport(libudev, EntryPoint = "udev_enumerate_add_match_parent")]
+        static extern int native_udev_enumerate_add_match_parent(IntPtr enumerate, IntPtr parent);
+        public override int udev_enumerate_add_match_parent(IntPtr enumerate, IntPtr parent)
+        {
+            return native_udev_enumerate_add_match_parent(enumerate, parent);
+        }
+
         [DllImport(libudev, EntryPoint = "udev_enumerate_add_match_subsystem")]
         static extern int native_udev_enumerate_add_match_subsystem(IntPtr enumerate,
             [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))] string subsystem);
@@ -161,6 +168,15 @@ namespace HidSharp.Platform.Linux
             return native_udev_device_new_from_syspath(udev, syspath);
         }
 
+        [DllImport(libudev, EntryPoint = "udev_device_new_from_subsystem_sysname")]
+        static extern IntPtr native_udev_device_new_from_subsystem_sysname(IntPtr udev,
+            [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))] string subsystem,
+            [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))] string sysname);
+        public override IntPtr udev_device_new_from_subsystem_sysname(IntPtr udev, string subsystem, string sysname)
+        {
+            return native_udev_device_new_from_subsystem_sysname(udev, subsystem, sysname);
+        }
+
         [DllImport(libudev, EntryPoint = "udev_device_ref")]
         static extern IntPtr native_udev_device_ref(IntPtr device);
         public override IntPtr udev_device_ref(IntPtr device)
@@ -181,6 +197,21 @@ namespace HidSharp.Platform.Linux
         public override string udev_device_get_devnode(IntPtr device)
         {
             return native_udev_device_get_devnode(device);
+        }
+
+        [DllImport(libudev, EntryPoint = "udev_device_get_syspath")]
+        [return: MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))]
+        static extern string native_udev_device_get_syspath(IntPtr device);
+        public override string udev_device_get_syspath(IntPtr device)
+        {
+            return native_udev_device_get_syspath(device);
+        }
+
+        [DllImport(libudev, EntryPoint = "udev_device_get_parent")]
+        static extern IntPtr native_udev_device_get_parent(IntPtr device);
+        public override IntPtr udev_device_get_parent(IntPtr device)
+        {
+            return native_udev_device_get_parent(device);
         }
 
         [DllImport(libudev, EntryPoint = "udev_device_get_parent_with_subsystem_devtype")]

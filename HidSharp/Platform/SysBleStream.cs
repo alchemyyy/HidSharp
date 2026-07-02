@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2012-2013, 2016, 2018-2019 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2012-2013, 2016, 2018-2019 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -50,7 +50,7 @@ namespace HidSharp.Platform
 
         internal void HandleRelease()
         {
-            if (_rch.HandleRelease()) { HandleFree(); }
+            if (_rch.HandleRelease()) { HandleFree(); OnFreed(); }
         }
 
         internal abstract void HandleFree();

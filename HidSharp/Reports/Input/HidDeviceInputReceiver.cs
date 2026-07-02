@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2018 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2018 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -201,7 +201,7 @@ namespace HidSharp.Reports.Input
         }
 
         /// <summary>
-        /// The <see cref="HidSharp.Reports.ReportDescriptor"> used to separate out reports.
+        /// The <see cref="HidSharp.Reports.ReportDescriptor"/> used to separate out reports.
         /// </summary>
         public ReportDescriptor ReportDescriptor
         {

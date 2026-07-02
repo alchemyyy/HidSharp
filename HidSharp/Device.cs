@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2017 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2017 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -55,7 +55,10 @@ namespace HidSharp
                 stream = OpenDeviceDirectly(openConfig);
                 if (exclusive)
                 {
-                    stream.Closed += (sender, e) => openUtility.Close();
+                    stream.Freed += (sender, e) =>
+                        {
+                            openUtility.Close();
+                        };
                     openUtility.InterruptRequested += (sender, e) =>
                         {
                             stream.OnInterruptRequested();
@@ -121,6 +124,54 @@ namespace HidSharp
         /// </summary>
         /// <returns>The friendly name.</returns>
         public abstract string GetFriendlyName();
+
+        /// <summary>
+        /// Returns the manufacturer name.
+        /// </summary>
+        public string GetManufacturer()
+        {
+            return GetManufacturer(GetStringFlags.None);
+        }
+
+        /// <summary>
+        /// Returns the manufacturer name.
+        /// </summary>
+        public virtual string GetManufacturer(GetStringFlags flags)
+        {
+            throw new NotSupportedException();
+        }
+
+        /// <summary>
+        /// Returns the product name.
+        /// </summary>
+        public string GetProductName()
+        {
+            return GetProductName(GetStringFlags.None);
+        }
+
+        /// <summary>
+        /// Returns the product name.
+        /// </summary>
+        public virtual string GetProductName(GetStringFlags flags)
+        {
+            throw new NotSupportedException();
+        }
+
+        /// <summary>
+        /// Returns the device serial number.
+        /// </summary>
+        public string GetSerialNumber()
+        {
+            return GetSerialNumber(GetStringFlags.None);
+        }
+
+        /// <summary>
+        /// Returns the device serial number.
+        /// </summary>
+        public virtual string GetSerialNumber(GetStringFlags flags)
+        {
+            throw new NotSupportedException();
+        }
 
         /// <summary>
         /// Checks if a particular implementation detail, such as the use of the Linux hidraw API, applies to this device.

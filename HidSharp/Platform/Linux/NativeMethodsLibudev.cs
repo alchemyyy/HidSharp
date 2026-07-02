@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2016 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2016 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -75,7 +75,9 @@ namespace HidSharp.Platform.Linux
         public abstract IntPtr udev_enumerate_ref(IntPtr enumerate);
         
         public abstract void udev_enumerate_unref(IntPtr enumerate);
-        
+
+        public abstract int udev_enumerate_add_match_parent(IntPtr enumerate, IntPtr parent);
+
         public abstract int udev_enumerate_add_match_subsystem(IntPtr enumerate, string subsystem);
         
         public abstract int udev_enumerate_scan_devices(IntPtr enumerate);
@@ -88,11 +90,17 @@ namespace HidSharp.Platform.Linux
         
         public abstract IntPtr udev_device_new_from_syspath(IntPtr udev, string syspath);
 
+        public abstract IntPtr udev_device_new_from_subsystem_sysname(IntPtr udev, string subsystem, string sysname);
+
         public abstract IntPtr udev_device_ref(IntPtr device);
 
         public abstract void udev_device_unref(IntPtr device);
 
         public abstract string udev_device_get_devnode(IntPtr device);
+
+        public abstract string udev_device_get_syspath(IntPtr device);
+
+        public abstract IntPtr udev_device_get_parent(IntPtr device);
 
         public abstract IntPtr udev_device_get_parent_with_subsystem_devtype(IntPtr device, string subsystem, string devtype);
 

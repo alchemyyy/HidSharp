@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2017 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2017 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ namespace HidSharp.Utility
     /// <summary>
     /// Converts USB device release numbers to and from binary-coded decimal.
     /// </summary>
-    static class BcdHelper
+    public static class BcdHelper
     {
         /// <summary>
         /// Converts a USB device release number to binary-coded decimal.
@@ -32,6 +32,8 @@ namespace HidSharp.Utility
         public static int FromVersion(Version version)
         {
             Throw.If.Null(version);
+            if (version.Major > 99) { throw new ArgumentException("USB major version must be less than or equal to 99."); }
+            if (version.Minor > 99) { throw new ArgumentException("USB minor version must be less than or equal to 99."); }
             return (version.Major / 10) << 12 | (version.Major % 10) << 8 | (version.Minor / 10) << 4 | (version.Minor % 10);
         }
 

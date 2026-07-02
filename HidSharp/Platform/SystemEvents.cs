@@ -1,5 +1,7 @@
-﻿#region License
-/* Copyright 2017 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+﻿//#define INOTIFY_SEEMS_TO_BE_REFCOUNTED
+
+#region License
+/* Copyright 2017 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -15,7 +17,7 @@
    under the License. */
 #endregion
 
-// Last updated 2017/12/9.
+// Last updated 2025/3/5.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -306,6 +308,9 @@ namespace HidSharp.Platform.SystemEvents
 
         [DllImport(libc)]
         public static extern int mach_msg_overwrite(IntPtr msg, int option, uint send_size, uint recv_size, uint recv_name, uint timeout, uint notify, IntPtr recv_msg, uint recv_limit);
+
+        [DllImport(libc)]
+        public static extern int mach_msg_receive(IntPtr msg);
 
         [DllImport(libc)]
         public static extern int mach_port_allocate(uint task, uint right, out uint name);
@@ -925,6 +930,7 @@ namespace HidSharp.Platform.SystemEvents
             using (var stream = File.Open(eventName, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
             {
                 int streamHandle = (int)stream.SafeFileHandle.DangerousGetHandle();
+
                 try { NativeMethods.retry(() => NativeMethods.fchmod(streamHandle, 6 << 6 | 6 << 3 | 6)); }
                 catch { }
 
@@ -1096,18 +1102,16 @@ namespace HidSharp.Platform.SystemEvents
     #region Linux Implementation
     internal sealed class LinuxEventManager : PosixEventManager
     {
-        sealed class JobHandle
-        {
-            internal int? WatchDescriptor;
-        }
+        static readonly JobHandle[] NoJobHandles = new JobHandle[0];
+        sealed class JobHandle { internal int? WatchDescriptor;        }
 
         int _notifyFD;
-        Dictionary<int, JobHandle> _watchDescriptors;
+        Dictionary<int, JobHandle[]> _watchDescriptors;
         Thread _notifyThread;
 
         internal override void Start()
         {
-            _watchDescriptors = new Dictionary<int, JobHandle>();
+            _watchDescriptors = new Dictionary<int, JobHandle[]>();
             base.Start();
         }
 
@@ -1119,10 +1123,14 @@ namespace HidSharp.Platform.SystemEvents
         protected override void RegisterJobObjectNotify(object jobObject, string eventName, string shmName)
         {
             var jobHandle = (JobHandle)jobObject;
+            if (jobHandle.WatchDescriptor != null)
+            {
+                throw new InvalidOperationException("Job handle is already registered.");
+            }
+
             if (eventName != null)
             {
                 bool hasThread = (_notifyThread != null);
-
                 if (!hasThread)
                 {
                     _notifyFD = LinuxNativeMethods.inotify_init();
@@ -1138,7 +1146,13 @@ namespace HidSharp.Platform.SystemEvents
                     throw new InvalidOperationException("Failed to add inotify watch descriptor: " + NativeMethods.GetLastError().ToString());
                 }
 
-                _watchDescriptors.Add(wd, jobHandle); jobHandle.WatchDescriptor = wd;
+                JobHandle[] jobHandles;
+                if (!_watchDescriptors.TryGetValue(wd, out jobHandles)) { jobHandles = NoJobHandles; }
+                Array.Resize(ref jobHandles, jobHandles.Length + 1);
+                jobHandles[jobHandles.Length - 1] = jobHandle;
+                jobHandle.WatchDescriptor = wd;
+                _watchDescriptors[wd] = jobHandles;
+
                 if (!hasThread)
                 {
                     _notifyThread = new Thread(RunNotifyThread) { IsBackground = true, Name = "HID System Events Notification Monitor" };
@@ -1153,13 +1167,37 @@ namespace HidSharp.Platform.SystemEvents
             if (jobHandle.WatchDescriptor != null)
             {
                 int wd = (int)jobHandle.WatchDescriptor;
+
+#if INOTIFY_SEEMS_TO_BE_REFCOUNTED
                 if (LinuxNativeMethods.inotify_rm_watch(_notifyFD, wd) < 0)
                 {
                     throw new InvalidOperationException("Failed to remove inotify watch descriptor.");
                 }
+#endif
 
                 jobHandle.WatchDescriptor = null;
-                _watchDescriptors.Remove(wd);
+
+                JobHandle[] jobHandles;
+                if (!_watchDescriptors.TryGetValue(wd, out jobHandles))
+                {
+                    throw new InvalidOperationException("Job handle is not tracked. This is a bug!");
+                }
+                jobHandles = jobHandles.Except(new[] { jobHandle }).ToArray();
+                if (jobHandles.Length == 0)
+                {
+                    _watchDescriptors.Remove(wd);
+
+#if !INOTIFY_SEEMS_TO_BE_REFCOUNTED
+                    if (LinuxNativeMethods.inotify_rm_watch(_notifyFD, wd) < 0)
+                    {
+                        throw new InvalidOperationException("Failed to remove inotify watch descriptor.");
+                    }
+#endif
+                }
+                else
+                {
+                    _watchDescriptors[wd] = jobHandles;
+                }
             }
         }
 
@@ -1178,6 +1216,7 @@ namespace HidSharp.Platform.SystemEvents
 
             while (true)
             {
+                // FIXME: BUG: We get in a continuous loop here, more or less, it seems. UpdateEventStruct ends up tripping IN_ATTRIB. Find out why!
                 int bytes = (int)(long)LinuxNativeMethods.read(fd, (IntPtr)buffer, (UIntPtr)bufferSize);
                 if (bytes < 1) { Debug.WriteLine("inotify read error. Abandoning watch thread."); return; }
 
@@ -1191,10 +1230,19 @@ namespace HidSharp.Platform.SystemEvents
                     {
                         lock (SyncRoot)
                         {
-                            JobHandle jobHandle;
-                            if (_watchDescriptors.TryGetValue(ev.wd, out jobHandle))
+                            JobHandle[] jobHandles;
+                            if (_watchDescriptors.TryGetValue(ev.wd, out jobHandles))
                             {
-                                RunJobObject(jobHandle);
+                                for (int i = 0; i < jobHandles.Length; i++)
+                                {
+                                    var jobHandle = jobHandles[i];
+
+                                    RunJobObject(jobHandle);
+                                }
+                            }
+                            else
+                            {
+                                // Descriptor not found!
                             }
                         }
                     }
@@ -1300,11 +1348,11 @@ namespace HidSharp.Platform.SystemEvents
             while (true)
             {
                 var msg = new MacOSNativeMethods.mach_msg_t();
-                int ret = MacOSNativeMethods.mach_msg_overwrite(
-                    IntPtr.Zero, MacOSNativeMethods.MACH_RCV_MSG,
-                    0, (uint)msgSize, fd, 0,
-                    0, (IntPtr)(void*)(&msg),
-                    0);
+                msg.header.msgh_size = (uint)msgSize;
+                msg.header.msgh_local_port = fd;
+                int ret = MacOSNativeMethods.mach_msg_receive(
+                    (IntPtr)(void*)(&msg)
+                    );
                 if (ret != MacOSNativeMethods.KERN_SUCCESS) { Debug.WriteLine("Mach error: " + ret.ToString()); continue; }
 
                 int token = msg.header.msgh_id;
@@ -1318,6 +1366,159 @@ namespace HidSharp.Platform.SystemEvents
                 }
             }
         }
+    }
+    #endregion
+
+    #region In-Process Implementation
+    internal sealed class InProcessEventManager : EventManager
+    {
+        internal override void Start()
+        {
+
+        }
+
+        #region Events
+        static readonly Dictionary<string, Events> _events = new Dictionary<string, Events>();
+
+        sealed class Events
+        {
+            public string Name;
+            public HashSet<InProcessSystemEvent> Objs = new HashSet<InProcessSystemEvent>();
+            public ManualResetEvent ResetEvent = new ManualResetEvent(false);
+        }
+
+        sealed class InProcessSystemEvent : SystemEvent
+        {
+            bool _createdNew;
+            Events _evs;
+
+            public InProcessSystemEvent(Events evs)
+                : base(evs.Name)
+            {
+                _createdNew = (evs.Objs.Count == 0);
+                _evs = evs;
+            }
+
+            public override void Set()
+            {
+                var evs = _evs;
+                if (evs == null) { return; }
+                _evs.ResetEvent.Set();
+            }
+
+            public override void Reset()
+            {
+                var evs = _evs;
+                if (evs == null) { return; }
+                evs.ResetEvent.Reset();
+            }
+
+            public override void Dispose()
+            {
+                lock (_events)
+                {
+                    var evs = _evs;
+                    if (evs == null) { return; }
+                    evs.Objs.Remove(this);
+                    _evs = null;
+                }
+            }
+
+            public override bool CreatedNew
+            {
+                get { return _createdNew; }
+            }
+
+            public override WaitHandle WaitHandle
+            {
+                get { return _evs.ResetEvent; }
+            }
+        }
+
+        public override SystemEvent CreateEvent(string name)
+        {
+            lock (_events)
+            {
+                Events evs;
+                if (!_events.TryGetValue(name, out evs)) { _events[name] = evs = new Events() { Name = name }; }
+                var ev = new InProcessSystemEvent(evs); evs.Objs.Add(ev); return ev;
+            }
+        }
+        #endregion
+
+        #region Mutexes
+        static readonly Dictionary<string, Mutexes> _mutexes = new Dictionary<string, Mutexes>();
+
+        sealed class Mutexes
+        {
+            public string Name;
+            public Mutex Mutex = new Mutex();
+            public HashSet<InProcessSystemMutex> Objs = new HashSet<InProcessSystemMutex>();
+        }
+
+        sealed class InProcessSystemMutex : SystemMutex
+        {
+            bool _createdNew;
+            bool _locked;
+            Mutexes _mts;
+
+            public InProcessSystemMutex(Mutexes mts)
+                : base(mts.Name)
+            {
+                _createdNew = (mts.Objs.Count == 0);
+                _mts = mts;
+            }
+
+            protected override bool WaitOne(int timeout)
+            {
+                if (_locked) { throw new InvalidOperationException(); }
+
+                var mts = _mts;
+                if (mts == null) { return false; }
+                if (!mts.Mutex.WaitOne(timeout)) { return false; }
+
+                _locked = true; return true;
+            }
+
+            protected override void ReleaseMutex()
+            {
+                if (!_locked) { return; }
+                _locked = false;
+
+                var mts = _mts;
+                if (mts == null) { return; }
+                mts.Mutex.ReleaseMutex();
+            }
+
+            public override void Dispose()
+            {
+                lock (_mutexes)
+                {
+                    ReleaseMutex();
+
+                    var mts = _mts;
+                    if (mts == null) { return; }
+                    mts.Objs.Remove(this);
+                    _mts = null;
+                }
+            }
+
+            public override bool CreatedNew
+            {
+                get { return _createdNew; }
+            }
+        }
+
+        public override SystemMutex CreateMutex(string name)
+        {
+            lock (_mutexes)
+            {
+                Mutexes mts;
+                if (!_mutexes.TryGetValue(name, out mts)) { _mutexes[name] = mts = new Mutexes() { Name = name }; }
+                var mt = new InProcessSystemMutex(mts); mts.Objs.Add(mt); return mt;
+            }
+        }
+        #endregion
     }
     #endregion
 

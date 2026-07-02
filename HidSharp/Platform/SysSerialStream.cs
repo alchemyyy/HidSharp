@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2018 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2018 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ namespace HidSharp.Platform
         {
             if (0 == Interlocked.Decrement(ref _refCount))
             {
-                if (_opened != 0) { HandleFree(); }
+                if (_opened != 0) { HandleFree(); OnFreed(); }
             }
         }
 

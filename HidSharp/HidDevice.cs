@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2010-2013, 2017 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2010-2013, 2017 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -49,21 +49,6 @@ namespace HidSharp
         }
 
         /// <summary>
-        /// Returns the manufacturer name.
-        /// </summary>
-        public abstract string GetManufacturer();
-
-        /// <summary>
-        /// Returns the product name.
-        /// </summary>
-        public abstract string GetProductName();
-
-        /// <summary>
-        /// Returns the device serial number.
-        /// </summary>
-        public abstract string GetSerialNumber();
-
-        /// <summary>
         /// Returns the maximum input report length, including the Report ID byte.
         /// If the device does not use Report IDs, the first byte will always be 0.
         /// </summary>
@@ -99,13 +84,10 @@ namespace HidSharp
             throw new NotSupportedException(); // Windows reconstructs it. Linux can retrieve it. MacOS 10.8+ can retrieve it as well.
         }
 
-        /*
-        TODO
-        public virtual string[] GetDevicePathHierarchy()
+        public virtual UsbPort GetUsbPort()
         {
             throw new NotSupportedException();
         }
-        */
 
         /// <summary>
         /// Returns the serial ports of the composite USB device.
@@ -121,13 +103,19 @@ namespace HidSharp
         public override string ToString()
         {
             string manufacturer = "(unnamed manufacturer)";
-            try { manufacturer = GetManufacturer(); } catch { }
+            try { manufacturer = GetManufacturer(); }
+            catch (UnauthorizedAccessException) { manufacturer = "(permission denied getting manufacturer)"; }
+            catch { }
 
             string productName = "(unnamed product)";
-            try { productName = GetProductName(); } catch { }
+            try { productName = GetProductName(); }
+            catch (UnauthorizedAccessException) { manufacturer = "(permission denied getting product)"; }
+            catch { }
 
             string serialNumber = "(no serial number)";
-            try { serialNumber = GetSerialNumber(); } catch { }
+            try { serialNumber = GetSerialNumber(); }
+            catch (UnauthorizedAccessException) { manufacturer = "(permission denied getting serial number)"; }
+            catch { }
 
             return string.Format(CultureInfo.InvariantCulture, "{0} {1} {2} (VID {3}, PID {4}, version {5})",
                 manufacturer, productName, serialNumber, VendorID, ProductID, ReleaseNumber);

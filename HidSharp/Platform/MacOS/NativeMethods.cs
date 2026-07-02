@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2012-2013, 2017, 2019 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2012-2013, 2017, 2019 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -507,7 +507,7 @@ namespace HidSharp.Platform.MacOS
         public static extern IntPtr write(int filedes, IntPtr buffer, UIntPtr size);
 
         [DllImport(libc, EntryPoint = "poll")]
-        public static extern int poll(ref pollfd fd, uint nfds, int timeout = -1); // < 0 if failed
+        public unsafe static extern int poll(ref pollfd fd, uint nfds, int timeout = -1); // < 0 if failed
 
         [DllImport(libc, SetLastError = true, EntryPoint = "fcntl")]
         public static extern int fcntl(int filedes, int cmd, int arg);
@@ -536,21 +536,35 @@ namespace HidSharp.Platform.MacOS
         [DllImport(libc, SetLastError = true, EntryPoint = "tcflush")]
         public static extern int tcflush(int filedes, int action);
 
-        public static int retry(Func<int> sysfunc)
+        public static bool ShouldRetry(int ret)
+        {
+            var error = (error)Marshal.GetLastWin32Error();
+            if (ret >= 0 || error != error.EINTR) { return false; }
+            return true;
+        }
+
+        public static bool ShouldRetry(IntPtr ret)
+        {
+            var error = (error)Marshal.GetLastWin32Error();
+            if ((long)ret >= 0 || error != error.EINTR) { return false; }
+            return true;
+        }
+
+        public static int Retry(Func<int> sysfunc)
         {
             while (true)
             {
-                int ret = sysfunc(); var error = (error)Marshal.GetLastWin32Error();
-                if (ret >= 0 || error != error.EINTR) { return ret; }
+                int ret = sysfunc();
+                if (!ShouldRetry(ret)) { return ret; }
             }
         }
 
-        public static IntPtr retry(Func<IntPtr> sysfunc)
+        public static IntPtr Retry(Func<IntPtr> sysfunc)
         {
             while (true)
             {
-                IntPtr ret = sysfunc(); var error = (error)Marshal.GetLastWin32Error();
-                if ((long)ret >= 0 || error != error.EINTR) { return ret; }
+                IntPtr ret = sysfunc();
+                if (!ShouldRetry(ret)) { return ret; }
             }
         }
     }

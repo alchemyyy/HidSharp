@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2017 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2017 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -61,6 +61,8 @@ namespace HidSharp
 
             HidSharpDiagnostics.Trace("Opening a device. Our priority is {0}, our interruptible state is {1}, and our transient state is {2}.",
                                       _priority, _interruptible, _transient);
+//ConsoleIO.WriteLine(Environment.StackTrace);
+//ConsoleIO.WriteLine("***");
         }
 
         public void Open()
@@ -147,7 +149,7 @@ namespace HidSharp
 
                             if (!exclusiveMutex.TryLock(timeout, out exclusiveLock))
                             {
-                                throw DeviceException.CreateIOException(_device, "The device is in use.", Utility.HResult.SharingViolation);
+                                throw DeviceException.CreateIOExceptionForSharingViolation(_device);
                             }
                         }
                     }

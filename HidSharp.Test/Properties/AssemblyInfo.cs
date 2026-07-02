@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyCompany("Illusory Studios LLC")]
-[assembly: AssemblyCopyright("Copyright © 2010-2013 James F. Bellinger <http://www.zer7.com/software/hidsharp>")]
+[assembly: AssemblyCopyright("Copyright © 2010-2013 James F. Bellinger <http://software.seekye.com/hidsharp>")]
 [assembly: AssemblyDescription("HID test program")]
 [assembly: AssemblyProduct("HidSharp")]
 [assembly: AssemblyTitle("HidSharp.Test")]

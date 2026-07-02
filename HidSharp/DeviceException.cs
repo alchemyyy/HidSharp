@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2017 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2017 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -43,6 +43,11 @@ namespace HidSharp
         public static IOException CreateIOException(Device device, string message, int hresult)
         {
             return new Exceptions.DeviceIOException(device, message, hresult);
+        }
+
+        public static IOException CreateIOExceptionForSharingViolation(Device device)
+        {
+            return CreateIOException(device, "The device is in use.", Utility.HResult.SharingViolation);
         }
 
         /// <summary>

@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2010-2015, 2017-2018 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2010-2015, 2017-2018 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -151,21 +151,50 @@ namespace HidSharp.Platform.Windows
             s = NativeMethods.NTString(buffer); return true;
         }
 
-        public override string GetManufacturer()
+        string GetUsbString(Func<IntPtr, char[], int, bool> callback)
+        {
+            string s = null;
+
+            if (!TryOpenToGetInfo(handle =>
+                {
+                    if (!TryGetDeviceString(handle, callback, out s)) { return false; }
+                    return true;
+                }))
+            {
+                throw DeviceException.CreateIOException(this, "Failed to get info.");
+            }
+
+            return s;
+        }
+
+        public override string GetManufacturer(GetStringFlags flags)
         {
             RequiresGetInfo(GetInfoFlags.Manufacturer);
+
+            if (0 != (flags & GetStringFlags.Uncached))
+            {
+                return GetUsbString(NativeMethods.HidD_GetManufacturerString);
+            }
+
             return _manufacturer;
         }
 
-        public override string GetProductName()
+        public override string GetProductName(GetStringFlags flags)
         {
             RequiresGetInfo(GetInfoFlags.ProductName);
+
+            if (0 != (flags & GetStringFlags.Uncached))
+            {
+                return GetUsbString(NativeMethods.HidD_GetProductString);
+            }
+
             return _productName;
         }
 
-        public override string GetSerialNumber()
+        public override string GetSerialNumber(GetStringFlags flags)
         {
             RequiresGetInfo(GetInfoFlags.SerialNumber);
+
             return _serialNumber;
         }
 
@@ -195,145 +224,48 @@ namespace HidSharp.Platform.Windows
             return (byte[])descriptor.Clone();
         }
 
-        /*
-        TODO
-        public unsafe override string[] GetDevicePathHierarchy()
+        sealed class WinUsbHub : UsbPort
         {
-            uint devInst;
-            if (TryGetDeviceUsbRoot(out devInst))
+            string _devicePath; int _portNumber;
+
+            public WinUsbHub(string devicePath, int portNumber)
             {
-                char* buffer = stackalloc char[1024]; uint length = 2048;
-                if (0 == NativeMethods.CM_Get_DevNode_Registry_Property(devInst, NativeMethods.CM_DRP_DRIVER, null, buffer, ref length, 0))
-                {
-                    var targetName = new string(buffer, 0, (int)(length >> 1)).TrimEnd('\0');
-
-                    uint parentDevInst;
-                    if (0 == NativeMethods.CM_Get_Parent(out parentDevInst, devInst))
-                    {
-                        var devicePaths = new List<string>();
-                        GetDevicePaths(parentDevInst, NativeMethods.GuidForUsbHub, devicePaths);
-
-                        foreach (var devicePath in devicePaths)
-                        {
-                            var handle = NativeMethods.CreateFileFromDevice(devicePath, NativeMethods.EFileAccess.None, NativeMethods.EFileShare.Read | NativeMethods.EFileShare.Write);
-                            if (handle != (IntPtr)(-1))
-                            {
-                                try
-                                {
-                                    for (uint N = 1; ; N++)
-                                    {
-                                        var nci = new NativeMethods.USB_NODE_CONNECTION_INFORMATION() { ConnectionIndex = N };
-                                        var nciSize = (uint)sizeof(NativeMethods.USB_NODE_CONNECTION_INFORMATION);
-
-                                        uint bytesReturned;
-                                        if (!NativeMethods.DeviceIoControl(handle, NativeMethods.IOCTL_USB_GET_NODE_CONNECTION_INFORMATION,
-                                                                           &nci, nciSize, &nci, nciSize, out bytesReturned, null)) { break; }
-
-                                        if (nci.ConnectionStatus == NativeMethods.USB_CONNECTION_STATUS.DeviceConnected)
-                                        {
-                                            var ncn = new NativeMethods.USB_NODE_CONNECTION_DRIVERKEY_NAME() { ConnectionIndex = N };
-                                            var ncnSize = (uint)sizeof(NativeMethods.USB_NODE_CONNECTION_DRIVERKEY_NAME);
-
-                                            if (NativeMethods.DeviceIoControl(handle, NativeMethods.IOCTL_USB_GET_NODE_CONNECTION_DRIVERKEY_NAME,
-                                                                              &ncn, ncnSize, &ncn, ncnSize, out bytesReturned, null))
-                                            {
-                                                if (ncn.ActualLength > 12)
-                                                {
-                                                    var thisName = new string(ncn.NodeName, 0, (int)((ncn.ActualLength - 12) >> 1));
-                                                    if (thisName == targetName)
-                                                    {
-                                                        // We figured out which USB port we are connected to!
-                                                        Console.WriteLine(N.ToString());
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                finally
-                                {
-                                    NativeMethods.CloseHandle(handle);
-                                }
-                            }
-                        }
-                    }
-                }
+                _devicePath = devicePath; _portNumber = portNumber;
             }
 
-            return new string[0];
-        }
-        */
-
-        bool TryGetDeviceUsbRoot(out uint devInst)
-        {
-            if (0 == NativeMethods.CM_Locate_DevNode(out devInst, _id))
+            public override string HubDevicePath
             {
-                // Get the USB root of the device.
-                while (true)
-                {
-                    uint parentDevInst;
-                    if (0 != NativeMethods.CM_Get_Parent(out parentDevInst, devInst)) { break; }
-
-                    string parentDeviceID;
-                    if (0 != NativeMethods.CM_Get_Device_ID(parentDevInst, out parentDeviceID)) { break; }
-                    if (!parentDeviceID.StartsWith(@"USB\") && !parentDeviceID.StartsWith(@"HID\")) { break; }
-
-                    devInst = parentDevInst;
-
-                    if (Regex.IsMatch(parentDeviceID, @"^USB\\VID_[0-9A-F]{4}&PID_[0-9A-F]{4}\\")) { return true; }
-                }
+                get { return _devicePath; }
             }
 
-            devInst = 0; return false;
-        }
-
-        /*
-        void GetDevicePaths(uint devInst, Guid guid, List<string> devicePaths)
-        {
-            string deviceID;
-            if (0 != NativeMethods.CM_Get_Device_ID(devInst, out deviceID)) { return; }
-
-            NativeMethods.HDEVINFO devInfo = NativeMethods.SetupDiGetClassDevs(
-                guid, deviceID, IntPtr.Zero,
-                NativeMethods.DIGCF.DeviceInterface | NativeMethods.DIGCF.Present
-                );
-
-            if (devInfo.IsValid)
+            public override int PortNumber
             {
-                try
-                {
-                    NativeMethods.SP_DEVINFO_DATA dvi = new NativeMethods.SP_DEVINFO_DATA();
-                    dvi.Size = Marshal.SizeOf(dvi);
-
-                    for (int j = 0; NativeMethods.SetupDiEnumDeviceInfo(devInfo, j, ref dvi); j++)
-                    {
-                        NativeMethods.SP_DEVICE_INTERFACE_DATA did = new NativeMethods.SP_DEVICE_INTERFACE_DATA();
-                        did.Size = Marshal.SizeOf(did);
-
-                        for (int k = 0; NativeMethods.SetupDiEnumDeviceInterfaces(devInfo, ref dvi, guid, k, ref did); k++)
-                        {
-                            string devicePath;
-                            if (NativeMethods.SetupDiGetDeviceInterfaceDevicePath(devInfo, ref did, out devicePath))
-                            {
-                                devicePaths.Add(devicePath);
-                            }
-                        }
-                    }
-                }
-                finally
-                {
-                    NativeMethods.SetupDiDestroyDeviceInfoList(devInfo);
-                }
+                get { return _portNumber; }
             }
         }
-        */
+
+        WinUsbHub _hub;
+        public unsafe override UsbPort GetUsbPort()
+        {
+            if (_hub != null) { return _hub; }
+
+            WinUsbHub hub = null;
+            NativeMethods.GetUsbPortDetails(_id, (handle, ncn, devicePath, portNumber) =>
+                {
+                    hub = new WinUsbHub(devicePath, portNumber);
+                    return true;
+                });
+            if (hub != null) { _hub = hub; return hub; }
+
+            return base.GetUsbPort();
+        }
 
         public override string[] GetSerialPorts()
         {
             uint devInst;
             List<string> ports = new List<string>();
 
-            if (TryGetDeviceUsbRoot(out devInst))
+            if (NativeMethods.TryGetDeviceUsbRoot(_id, out devInst))
             {
                 // Now get its children of the Ports type.
                 if (0 == NativeMethods.CM_Get_Child(out devInst, devInst))

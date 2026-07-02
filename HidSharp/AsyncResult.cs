@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2012 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2012 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -43,20 +43,43 @@ namespace HidSharp
 
         internal delegate T OperationCallback();
 
+        internal static AsyncResult<T> CustomBeginOperation(AsyncCallback callback, object state)
+        {
+            var ar = new AsyncResult<T>(callback, state);
+            return ar;
+        }
+
+        internal static void CustomReturnResult(IAsyncResult asyncResult, T result)
+        {
+            var self = (AsyncResult<T>)asyncResult;
+            self.Result = result;
+            self.Complete();
+        }
+
+        internal static void CustomReturnException(IAsyncResult asyncResult, Exception e)
+        {
+            var self = (AsyncResult<T>)asyncResult;
+            self.Exception = e;
+            self.Complete();
+        }
+
         internal static IAsyncResult BeginOperation(OperationCallback operation,
             AsyncCallback callback, object state)
         {
-            var ar = new AsyncResult<T>(callback, state);
-            ThreadPool.QueueUserWorkItem(delegate(object self)
+            var ar = CustomBeginOperation(callback, state);
+            ThreadPool.QueueUserWorkItem(delegate(object self_)
             {
-                try { ar.Result = operation(); }
-                catch (Exception e) { ar.Exception = e; }
-                ar.Complete();
+                var self = (AsyncResult<T>)self_;
+
+                T result;
+                try { result = operation(); }
+                catch (Exception e) { CustomReturnException(self, e); return; }
+                CustomReturnResult(self, result);
             }, ar);
             return ar;
         }
 
-        internal T EndOperation()
+        T EndOperation()
         {
             while (true)
             {

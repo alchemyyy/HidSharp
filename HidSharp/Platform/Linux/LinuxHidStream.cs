@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2012, 2017 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2012, 2017 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ namespace HidSharp.Platform.Linux
                             string devnode = NativeMethodsLibudev.Instance.udev_device_get_devnode(device);
 							if (devnode != null)
 							{
-								int handle = NativeMethods.retry(() => NativeMethods.open(devnode, oflag));
+								int handle = NativeMethods.Retry(() => NativeMethods.open(devnode, oflag));
 								if (handle < 0)
 								{
 									var error = (NativeMethods.error)Marshal.GetLastWin32Error();
@@ -119,7 +119,7 @@ namespace HidSharp.Platform.Linux
 		
 		internal override void HandleFree()
 		{
-			NativeMethods.retry(() => NativeMethods.close(_handle)); _handle = -1;
+			NativeMethods.Retry(() => NativeMethods.close(_handle)); _handle = -1;
 		}
 		
 		unsafe void ReadThread()
@@ -130,9 +130,9 @@ namespace HidSharp.Platform.Linux
 			{
 				lock (_inputQueue)
 				{
-                    var pfd = new NativeMethods.pollfd();
-					pfd.fd = _handle;
-					pfd.events = NativeMethods.pollev.IN;
+                    var pollfd = new NativeMethods.pollfd();
+					pollfd.fd = _handle;
+					pollfd.events = NativeMethods.pollev.IN;
 						
 					while (!_shutdown)
 					{
@@ -140,16 +140,15 @@ namespace HidSharp.Platform.Linux
 						Monitor.Exit(_inputQueue);
 
                         int ret;
-						try { ret = NativeMethods.poll(ref pfd, (IntPtr)1, 250); }
-						finally { Monitor.Enter(_inputQueue); }
+						try { ret = NativeMethods.poll(ref pollfd, (IntPtr)1, 250); } finally { Monitor.Enter(_inputQueue); }
                         if (ret != 1) { continue; }
 
-                        if (0 != (pfd.revents & (NativeMethods.pollev.ERR | NativeMethods.pollev.HUP | NativeMethods.pollev.NVAL)))
+                        if (0 != (pollfd.revents & (NativeMethods.pollev.ERR | NativeMethods.pollev.HUP | NativeMethods.pollev.NVAL)))
                         {
                             break;
                         }
 
-						if (0 != (pfd.revents & NativeMethods.pollev.IN))
+						if (0 != (pollfd.revents & NativeMethods.pollev.IN))
 						{
                             // Linux doesn't provide a Report ID if the device doesn't use one.
                             int inputLength = Device.GetMaxInputReportLength();
@@ -159,7 +158,7 @@ namespace HidSharp.Platform.Linux
 							fixed (byte* inputBytes = inputReport)
 							{
                                 var inputBytesPtr = (IntPtr)inputBytes;
-								IntPtr length = NativeMethods.retry(() => NativeMethods.read
+								IntPtr length = NativeMethods.Retry(() => NativeMethods.read
 									                            (_handle, inputBytesPtr, (UIntPtr)inputReport.Length));
 								if ((long)length < 0)
 								{
@@ -243,7 +242,7 @@ namespace HidSharp.Platform.Linux
                                 try
                                 {
                                     var outputBytesPtr = (IntPtr)outputBytes;
-                                    length = NativeMethods.retry(() => NativeMethods.write
+                                    length = NativeMethods.Retry(() => NativeMethods.write
                                                             (_handle, outputBytesPtr, (UIntPtr)outputBytesRaw.Length));
                                     if ((long)length == outputBytesRaw.Length) { outputReport.DoneOK = true; }
                                 }

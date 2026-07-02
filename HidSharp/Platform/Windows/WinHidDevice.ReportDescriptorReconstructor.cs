@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2018 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2018 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using HidSharp.Reports;
@@ -86,9 +87,10 @@ namespace HidSharp.Platform.Windows
                 var types = _types[(int)reportType];
                 var reportBytes = new byte[types.ReportLength];
 
-                var reports = types.Items.GroupBy(y => y.Item.ReportID);
-                foreach (var report in reports)
+                var reports = types.Items.GroupBy(y => y.Item.ReportID).ToArray();
+                for (int reportIndex = 0; reportIndex < reports.Length; reportIndex++)
                 {
+                    var report = reports[reportIndex];
                     var reportID = report.Key;
                     var reportItemList = report.ToArray();
 
@@ -96,7 +98,7 @@ namespace HidSharp.Platform.Windows
                     {
                         _builder.AddGlobalItem(GlobalItemTag.ReportID, reportID);
                     }
-
+//Console.WriteLine(string.Format("Report ID {0}", reportID));
                     int maxBit = (reportBytes.Length - 1) * 8;
 
                     // Determine the location of all report items.
@@ -124,12 +126,25 @@ namespace HidSharp.Platform.Windows
                         InitData(reportBytes, reportID);
                         if (dataIndexCount == reportItem.ReportCount)
                         {
+/*
+Console.WriteLine(string.Format("DX - {0}",
+    string.Join(",", reportBytes.Select(x => x.ToString()).ToArray())
+    ));
+*/
+
                             // Individual fields...
                             var dataList = new NativeMethods.HIDP_DATA() { DataIndex = item.DataIndex, RawValue = 0xffffffffu }; int dataCount = 1;
                             int hr = NativeMethods.HidP_SetData(reportType, ref dataList, ref dataCount, _preparsed, reportBytes, reportBytes.Length);
                             if (hr == NativeMethods.HIDP_STATUS_SUCCESS)
                             {
                                 GetDataStartBit(reportBytes, reportItem, maxBit);
+/*
+Console.WriteLine(string.Format("D - {0} - {1} {2} - {3} {4} - {5} - {6:X4},{7:X4},{8:X4}",
+    reportItem.BitOffset, reportItem.ReportCount, reportItem.ReportSize, reportItem.Item.DataIndex, reportItem.Item.DataIndexMax,
+    string.Join(",", reportBytes.Select(x => x.ToString()).ToArray()),
+    reportItem.Item.UsagePage, reportItem.Item.UsageIndex, reportItem.Item.UsageMax
+    ));
+*/
                             }
                             else if (hr == NativeMethods.HIDP_STATUS_IS_VALUE_ARRAY)
                             {
@@ -176,35 +191,65 @@ namespace HidSharp.Platform.Windows
                             // Not sure...
                             reportItem.BitOffset = maxBit;
                         }
+
+//Console.WriteLine(string.Format("  {0}: offset {1}, count {2}, size {3}", reportItemIndex, reportItem.BitOffset, reportItem.ReportCount, reportItem.ReportSize));
+//Debug.Assert(reportItemIndex == 0 || reportItem.BitOffset != reportItemList[reportItemIndex - 1].BitOffset);
                     }
 
                     // Write the report descriptors.
                     int currentBit = 0;
 
-                    var reportItems = report.Where(x => x.BitOffset != maxBit).OrderBy(x => x.BitOffset).ToArray();
-                    foreach (var reportItem in reportItems)
+                    var reportGroupedItems = report.Where(x => x.BitOffset != maxBit).GroupBy(x => x.BitOffset).OrderBy(x => x.Key).ToArray(); 
+                    foreach (var reportItemsArr in reportGroupedItems)
                     {
+                        var reportItems = reportItemsArr.ToArray();
+                        var reportItem = reportItems[0];
+                        for (int i = 1; i < reportItems.Length; i++)
+                        {
+                            var otherItem = reportItems[i];
+                            if (otherItem.Button == reportItem.Button &&
+                                otherItem.Item.IsAbsolute == reportItem.Item.IsAbsolute &&
+                                otherItem.Item.IsAlias == reportItem.Item.IsAlias &&
+                                otherItem.Item.IsDesignatorRange == reportItem.Item.IsDesignatorRange &&
+                                otherItem.Item.IsRange == reportItem.Item.IsRange &&
+                                otherItem.Item.IsStringRange == reportItem.Item.IsStringRange &&
+                                otherItem.ReportCount == reportItem.ReportCount &&
+                                otherItem.ReportSize == reportItem.ReportSize)
+                            {
+                                //
+                            }
+                            else
+                            {
+                                throw new NotImplementedException();
+                            }
+                        }
+
                         var button = reportItem.Button;
                         var item = reportItem.Item;
                         int startBit = reportItem.BitOffset;
                         int bitCount = reportItem.ReportCount * reportItem.ReportSize;
+
                         if (currentBit > startBit) { throw new NotImplementedException(); } // Overlapping...
 
                         SetCollection(item.LinkCollection);
                         PadReport(mainItemTag, startBit, ref currentBit);
 
                         // The entry...
-                        _builder.AddGlobalItem(GlobalItemTag.UsagePage, item.UsagePage);
+                        foreach (var xreportItem in reportItems)
+                        {
+                            var xitem = xreportItem.Item;
+                            _builder.AddGlobalItem(GlobalItemTag.UsagePage, xitem.UsagePage);
 
-                        uint usageMin = item.UsageIndex, usageMax = (item.IsRange != 0) ? item.UsageMax : usageMin;
-                        if (item.IsRange != 0)
-                        {
-                            _builder.AddLocalItem(LocalItemTag.UsageMinimum, usageMin);
-                            _builder.AddLocalItem(LocalItemTag.UsageMaximum, usageMax);
-                        }
-                        else
-                        {
-                            _builder.AddLocalItem(LocalItemTag.Usage, usageMin);
+                            uint usageMin = xitem.UsageIndex, usageMax = (xitem.IsRange != 0) ? xitem.UsageMax : usageMin;
+                            if (xitem.IsRange != 0)
+                            {
+                                _builder.AddLocalItem(LocalItemTag.UsageMinimum, usageMin);
+                                _builder.AddLocalItem(LocalItemTag.UsageMaximum, usageMax);
+                            }
+                            else
+                            {
+                                _builder.AddLocalItem(LocalItemTag.Usage, usageMin);
+                            }
                         }
 
                         if (button)
@@ -218,7 +263,7 @@ namespace HidSharp.Platform.Windows
                             _builder.AddGlobalItemSigned(GlobalItemTag.PhysicalMinimum, item.VALUE_PhysicalMin);
                             _builder.AddGlobalItemSigned(GlobalItemTag.PhysicalMaximum, item.VALUE_PhysicalMax);
                             _builder.AddGlobalItem(GlobalItemTag.Unit, item.VALUE_Units);
-                            _builder.AddGlobalItem(GlobalItemTag.UnitExponent, item.VALUE_UnitsExp);
+                            _builder.AddGlobalItemSigned(GlobalItemTag.UnitExponent, item.VALUE_UnitsExp);
                             _builder.AddGlobalItem(GlobalItemTag.ReportSize, (uint)reportItem.ReportSize);
                             _builder.AddGlobalItem(GlobalItemTag.ReportCount, (uint)reportItem.ReportCount);
                         }

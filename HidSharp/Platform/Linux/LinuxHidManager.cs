@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2012, 2017-2018 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2012, 2017-2018 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -44,8 +44,11 @@ namespace HidSharp.Platform.Linux
                 {
                     int ret;
 
-                    ret = NativeMethodsLibudev.Instance.udev_monitor_filter_add_match_subsystem_devtype(monitor, "hid", null);
-                    RunAssert(ret >= 0, "HidSharp udev_monitor_failed_add_match_subsystem_devtype failed.");
+                    ret = NativeMethodsLibudev.Instance.udev_monitor_filter_add_match_subsystem_devtype(monitor, "tty", null); // Serial
+                    RunAssert(ret >= 0, "HidSharp udev_monitor_failed_add_match_subsystem_devtype (tty) failed.");
+
+                    ret = NativeMethodsLibudev.Instance.udev_monitor_filter_add_match_subsystem_devtype(monitor, "hid", null); // USB HID
+                    RunAssert(ret >= 0, "HidSharp udev_monitor_failed_add_match_subsystem_devtype (hid) failed.");
 
                     ret = NativeMethodsLibudev.Instance.udev_monitor_enable_receiving(monitor);
                     RunAssert(ret >= 0, "HidSharp udev_monitor_enable_receiving failed.");
@@ -53,20 +56,20 @@ namespace HidSharp.Platform.Linux
                     int fd = NativeMethodsLibudev.Instance.udev_monitor_get_fd(monitor);
                     RunAssert(fd >= 0, "HidSharp udev_monitor_get_fd failed.");
 
-                    var fds = new NativeMethods.pollfd[1];
-                    fds[0].fd = fd;
-                    fds[0].events = NativeMethods.pollev.IN;
+                    var pollfd = new NativeMethods.pollfd();
+                    pollfd.fd = fd;
+                    pollfd.events = NativeMethods.pollev.IN;
 
                     readyCallback();
                     while (true)
                     {
-                        ret = NativeMethods.retry(() => NativeMethods.poll(fds, (IntPtr)1, -1));
+                        do { ret = NativeMethods.poll(ref pollfd, (IntPtr)1, -1); } while (NativeMethods.ShouldRetry(ret));
                         if (ret < 0) { break; }
 
                         if (ret == 1)
                         {
-                            if (0 != (fds[0].revents & (NativeMethods.pollev.ERR | NativeMethods.pollev.HUP | NativeMethods.pollev.NVAL))) { break; }
-                            if (0 != (fds[0].revents & NativeMethods.pollev.IN))
+                            if (0 != (pollfd.revents & (NativeMethods.pollev.ERR | NativeMethods.pollev.HUP | NativeMethods.pollev.NVAL))) { break; }
+                            if (0 != (pollfd.revents & NativeMethods.pollev.IN))
                             {
                                 IntPtr device = NativeMethodsLibudev.Instance.udev_monitor_receive_device(monitor);
                                 if (device != null)
@@ -102,17 +105,8 @@ namespace HidSharp.Platform.Linux
 
         protected override object[] GetSerialDeviceKeys()
         {
-            //return GetDeviceKeys("tty"); // TODO: Find proper DevicePaths by enumerating tty.
-            try
-            {
-                return Directory.GetFiles("/dev/").Where(name =>
-                    name.StartsWith("/dev/ttyACM") || name.StartsWith("/dev/ttyUSB")
-                    ).Cast<object>().ToArray();
-            }
-            catch
-            {
-                return new object[0];
-            }
+          //return GetDeviceKeys("tty"); // TODO: Find proper DevicePaths by enumerating tty.
+            return LinuxSerialDevice.GetSerialDeviceKeys();
         }
 
         object[] GetDeviceKeys(string subsystem)
@@ -137,7 +131,25 @@ namespace HidSharp.Platform.Linux
                                      entry = NativeMethodsLibudev.Instance.udev_list_entry_get_next(entry))
                                 {
                                     string syspath = NativeMethodsLibudev.Instance.udev_list_entry_get_name(entry);
-                                    if (syspath != null) { paths.Add(syspath); }
+
+                                    if (syspath != null)
+                                    {
+                                        IntPtr device = NativeMethodsLibudev.Instance.udev_device_new_from_syspath(udev, syspath);
+                                        if (device != null)
+                                        {
+                                            try
+                                            {
+                                                if (NativeMethodsLibudev.Instance.udev_device_get_is_initialized(device) > 0)
+                                                {
+                                                    paths.Add(syspath);
+                                                }
+                                            }
+                                            finally
+                                            {
+                                                NativeMethodsLibudev.Instance.udev_device_unref(device);
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

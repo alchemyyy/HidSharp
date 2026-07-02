@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2016 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2016 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@ namespace HidSharp
 {
     public abstract class DeviceStream : Stream
     {
+        internal event EventHandler Freed;
+
         /// <summary>
         /// Occurs when the stream is closed.
         /// </summary>
@@ -108,6 +110,17 @@ namespace HidSharp
         protected void RaiseClosed()
         {
             var ev = Closed;
+            if (ev != null) { ev(this, EventArgs.Empty); }
+        }
+
+        internal virtual void OnFreed()
+        {
+            RaiseFreed();
+        }
+
+        internal void RaiseFreed()
+        {
+            var ev = Freed;
             if (ev != null) { ev(this, EventArgs.Empty); }
         }
 

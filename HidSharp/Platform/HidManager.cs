@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2012-2019 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2012-2019 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -171,7 +171,17 @@ namespace HidSharp.Platform
 
         protected abstract bool TryCreateSerialDevice(object key, out Device device);
 
+        public virtual void UninstallDevice(int vendorID, int productID, DeviceUninstallOptions options)
+        {
+            throw new NotSupportedException();
+        }
+
         public virtual bool AreDriversBeingInstalled
+        {
+            get { return false; }
+        }
+
+        public virtual bool CanUninstallDevices
         {
             get { return false; }
         }

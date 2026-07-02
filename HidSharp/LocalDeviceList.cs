@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2018 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2018 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -38,6 +38,11 @@ namespace HidSharp
             return GetDevices(DeviceTypes.Hid | DeviceTypes.Serial | DeviceTypes.Ble);
         }
 
+        public override void UninstallDevice(int vendorID, int productID, DeviceUninstallOptions options)
+        {
+            Platform.HidSelector.Instance.UninstallDevice(vendorID, productID, options);
+        }
+
         public override string ToString()
         {
             return Platform.HidSelector.Instance.FriendlyName; // This value is useful for debugging.
@@ -46,6 +51,11 @@ namespace HidSharp
         public override bool AreDriversBeingInstalled
         {
             get { return Platform.HidSelector.Instance.AreDriversBeingInstalled; }
+        }
+
+        public override bool CanUninstallDevices
+        {
+            get { return Platform.HidSelector.Instance.CanUninstallDevices; }
         }
     }
 }

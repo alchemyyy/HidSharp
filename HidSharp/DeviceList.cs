@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2015-2016, 2018-2019 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2015-2016, 2018-2019 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -157,20 +157,44 @@ namespace HidSharp
         /// <returns>The device, or null if none was found.</returns>
         public SerialDevice GetSerialDeviceOrNull(string portName)
         {
+            return GetSerialDeviceOrNull(portName, null);
+        }
+
+        /// <summary>
+        /// Gets the connected serial device with the specific device path or filesystem name.
+        /// </summary>
+        /// <param name="portName">The device path or filesystem name.</param>
+        /// <param name="serialNumber">The serial number, or null to not filter by serial number.</param>
+        /// <returns>The device, or null if none was found.</returns>
+        public SerialDevice GetSerialDeviceOrNull(string portName, string serialNumber)
+        {
             return GetSerialDevices().Where(d =>
                 {
-                    if (d.DevicePath == portName) { return true; }
-
-                    try
+                    if (portName != null)
                     {
-                        if (d.GetFileSystemName() == portName) { return true; }
+                        try
+                        {
+                            if (d.DevicePath != portName && d.GetFileSystemName() != portName) { return false; }
+                        }
+                        catch
+                        {
+                            return false;
+                        }
                     }
-                    catch
+
+                    if (serialNumber != null)
                     {
-
+                        try
+                        {
+                            if (d.GetSerialNumber() != serialNumber) { return false; }
+                        }
+                        catch
+                        {
+                            return false;
+                        }
                     }
 
-                    return false;
+                    return true;
                 }).FirstOrDefault();
         }
 
@@ -194,12 +218,22 @@ namespace HidSharp
             if (ev != null) { ev(this, new DeviceListChangedEventArgs()); }
         }
 
+        public virtual void UninstallDevice(int vendorID, int productID, DeviceUninstallOptions options)
+        {
+            throw new NotSupportedException();
+        }
+
         /// <summary>
         /// <c>true</c> if drivers are presently being installed.
         /// </summary>
         public abstract bool AreDriversBeingInstalled
         {
             get;
+        }
+
+        public virtual bool CanUninstallDevices
+        {
+            get { return false; }
         }
 
         /// <summary>

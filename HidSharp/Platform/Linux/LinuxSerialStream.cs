@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2017, 2019 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2017, 2019 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ namespace HidSharp.Platform.Linux
             string fileSystemName = device.GetFileSystemName();
 
             int ret;
-            int handle = NativeMethods.retry(() => NativeMethods.open(fileSystemName, NativeMethods.oflag.RDWR | NativeMethods.oflag.NOCTTY | NativeMethods.oflag.NONBLOCK));
+            int handle = NativeMethods.Retry(() => NativeMethods.open(fileSystemName, NativeMethods.oflag.RDWR | NativeMethods.oflag.NOCTTY | NativeMethods.oflag.NONBLOCK));
             if (handle < 0)
             {
                 var error = (NativeMethods.error)Marshal.GetLastWin32Error();
@@ -52,10 +52,10 @@ namespace HidSharp.Platform.Linux
                 }
             }
 
-            ret = NativeMethods.retry(() => NativeMethods.ioctl(handle, NativeMethods.TIOCEXCL));
+            ret = NativeMethods.Retry(() => NativeMethods.ioctl(handle, NativeMethods.TIOCEXCL));
             if (ret < 0)
             {
-                NativeMethods.retry(() => NativeMethods.close(handle));
+                NativeMethods.Retry(() => NativeMethods.close(handle));
                 throw new IOException("Unable to open serial device exclusively.");
             }
 
@@ -69,11 +69,11 @@ namespace HidSharp.Platform.Linux
             }
             */
 
-            ret = NativeMethods.retry(() => NativeMethods.tcgetattr(handle, out _oldSettings));
+            ret = NativeMethods.Retry(() => NativeMethods.tcgetattr(handle, out _oldSettings));
             if (ret < 0)
             {
-                NativeMethods.retry(() => NativeMethods.ioctl(handle, NativeMethods.TIOCNXCL));
-                NativeMethods.retry(() => NativeMethods.close(handle));
+                NativeMethods.Retry(() => NativeMethods.ioctl(handle, NativeMethods.TIOCNXCL));
+                NativeMethods.Retry(() => NativeMethods.close(handle));
                 throw new IOException("Unable to get serial port settings.");
             }
 
@@ -86,6 +86,8 @@ namespace HidSharp.Platform.Linux
 
         protected override void Dispose(bool disposing)
         {
+            bool freed = false;
+
             try
             {
                 lock (_lock)
@@ -93,15 +95,22 @@ namespace HidSharp.Platform.Linux
                     int handle = Interlocked.Exchange(ref _handle, -1);
                     if (handle >= 0)
                     {
-                        NativeMethods.retry(() => NativeMethods.tcsetattr(handle, NativeMethods.TCSANOW, ref _oldSettings));
-                        NativeMethods.retry(() => NativeMethods.ioctl(handle, NativeMethods.TIOCNXCL));
-                        NativeMethods.retry(() => NativeMethods.close(handle));
+                        NativeMethods.Retry(() => NativeMethods.tcsetattr(handle, NativeMethods.TCSANOW, ref _oldSettings));
+                        NativeMethods.Retry(() => NativeMethods.ioctl(handle, NativeMethods.TIOCNXCL));
+                        NativeMethods.Retry(() => NativeMethods.close(handle));
+
+                        freed = true;
                     }
                 }
             }
             catch
             {
 
+            }
+
+            if (freed)
+            {
+                OnFreed();
             }
 
             base.Dispose(disposing);
@@ -112,7 +121,7 @@ namespace HidSharp.Platform.Linux
             int handle = _handle;
             if (handle >= 0)
             {
-                NativeMethods.retry(() => NativeMethods.tcdrain(handle));
+                NativeMethods.Retry(() => NativeMethods.tcdrain(handle));
             }
         }
 
@@ -156,14 +165,14 @@ namespace HidSharp.Platform.Linux
                     var bufferPtr = (IntPtr)(buffer0 + offset);
                     int bytesToRead = count;
 
-                    var fd = new NativeMethods.pollfd() { fd = handle, events = NativeMethods.pollev.IN };
-                    int ret = NativeMethods.retry(() => NativeMethods.poll(ref fd, (IntPtr)1, GetTimeout(startTime, readTimeout)));
+                    int ret; var pollfd = new NativeMethods.pollfd() { fd = handle, events = NativeMethods.pollev.IN };
+                    do { ret = NativeMethods.poll(ref pollfd, (IntPtr)1, GetTimeout(startTime, readTimeout)); } while (NativeMethods.ShouldRetry(ret));
                     if (ret < 0) { throw new IOException("Read failed (poll)."); }
                     if (ret == 1)
                     {
-                        if (fd.revents != NativeMethods.pollev.IN) { throw new IOException(string.Format("Closed during read ({0}).", fd.revents)); }
+                        if (pollfd.revents != NativeMethods.pollev.IN) { throw new IOException(string.Format("Closed during read ({0}).", pollfd.revents)); }
 
-                        int readCount = checked((int)NativeMethods.retry(() => NativeMethods.read(handle, bufferPtr, (UIntPtr)bytesToRead)));
+                        int readCount = checked((int)NativeMethods.Retry(() => NativeMethods.read(handle, bufferPtr, (UIntPtr)bytesToRead)));
                         if (readCount <= 0 || readCount > bytesToRead) { throw new IOException("Read failed."); }
 
                         return readCount;
@@ -191,14 +200,14 @@ namespace HidSharp.Platform.Linux
                     var bufferPtr = (IntPtr)(buffer0 + offset + bytesWritten);
                     int bytesToWrite = count - bytesWritten;
 
-                    var fd = new NativeMethods.pollfd() { fd = handle, events = NativeMethods.pollev.OUT };
-                    int ret = NativeMethods.retry(() => NativeMethods.poll(ref fd, (IntPtr)1, GetTimeout(startTime, writeTimeout)));
+                    int ret; var pollfd = new NativeMethods.pollfd() { fd = handle, events = NativeMethods.pollev.OUT };
+                    do { ret = NativeMethods.poll(ref pollfd, (IntPtr)1, GetTimeout(startTime, writeTimeout)); } while (NativeMethods.ShouldRetry(ret));
                     if (ret < 0) { throw new IOException("Write failed (poll)."); }
                     if (ret == 1)
                     {
-                        if (fd.revents != NativeMethods.pollev.OUT) { throw new IOException(string.Format("Closed during write ({0}).", fd.revents)); }
+                        if (pollfd.revents != NativeMethods.pollev.OUT) { throw new IOException(string.Format("Closed during write ({0}).", pollfd.revents)); }
 
-                        int writeCount = checked((int)NativeMethods.retry(() => NativeMethods.write(handle, bufferPtr, (UIntPtr)bytesToWrite)));
+                        int writeCount = checked((int)NativeMethods.Retry(() => NativeMethods.write(handle, bufferPtr, (UIntPtr)bytesToWrite)));
                         if (writeCount <= 0 || writeCount > bytesToWrite) { throw new IOException("Write failed."); }
                         bytesWritten += writeCount;
                     }
@@ -245,7 +254,7 @@ namespace HidSharp.Platform.Linux
                         var parity = _ser.Parity;
                         int stopBits = _ser.StopBits;
 
-                        ret = NativeMethods.retry(() => NativeMethods.cfsetspeed(ref _newSettings, (uint)Math.Max(1, baudRate)));
+                        ret = NativeMethods.Retry(() => NativeMethods.cfsetspeed(ref _newSettings, (uint)Math.Max(1, baudRate)));
                         if (ret < 0) { throw new IOException("cfsetspeed failed."); }
 
                         uint cflag = _newSettings.c_cflag;
@@ -261,10 +270,10 @@ namespace HidSharp.Platform.Linux
                         if (stopBits == 2) { cflag |= NativeMethods.CSTOPB; }
                         _newSettings.c_cflag = cflag;
 
-                        ret = NativeMethods.retry(() => NativeMethods.tcsetattr(handle, NativeMethods.TCSANOW, ref _newSettings));
+                        ret = NativeMethods.Retry(() => NativeMethods.tcsetattr(handle, NativeMethods.TCSANOW, ref _newSettings));
                         if (ret < 0) { throw new IOException("tcsetattr failed."); }
 
-                        ret = NativeMethods.retry(() => NativeMethods.tcflush(handle, NativeMethods.TCIFLUSH));
+                        ret = NativeMethods.Retry(() => NativeMethods.tcflush(handle, NativeMethods.TCIFLUSH));
                         if (ret < 0) { throw new IOException("tcflush failed."); }
 
                         _settingsChanged = false;

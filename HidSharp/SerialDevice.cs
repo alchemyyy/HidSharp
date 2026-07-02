@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2017 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2017 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -64,10 +64,36 @@ namespace HidSharp
         /// <inheritdoc/>
         public override string ToString()
         {
+            string manufacturer = "(unnamed manufacturer)";
+            try { manufacturer = GetManufacturer(); }
+            catch (UnauthorizedAccessException) { manufacturer = "(permission denied getting manufacturer)"; }
+            catch { }
+
+            string productName = "(unnamed product)";
+            try { productName = GetProductName(); }
+            catch (UnauthorizedAccessException) { manufacturer = "(permission denied getting product)"; }
+            catch { }
+
+            string serialNumber = "(no serial number)";
+            try { serialNumber = GetSerialNumber(); }
+            catch (UnauthorizedAccessException) { manufacturer = "(permission denied getting serial number)"; }
+            catch { }
+
             string fileSystemName = "(unknown filesystem name)";
             try { fileSystemName = GetFileSystemName(); } catch { }
 
-            return string.Format("{0} ({1})", fileSystemName, DevicePath);
+            return string.Format("{0} ({1}, {2} {3} {4}, VID {5}, PID {6})",
+                                 fileSystemName, DevicePath, manufacturer, productName, serialNumber, VendorID, ProductID);
+        }
+
+        public virtual int VendorID
+        {
+            get { return -1; }
+        }
+
+        public virtual int ProductID
+        {
+            get { return -1; }
         }
     }
 }

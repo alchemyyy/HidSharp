@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2010-2012, 2016 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2010-2012, 2016 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -18,12 +18,13 @@
 #pragma warning disable 169, 649
 
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using HidSharp.Experimental;
 using HidSharp.Utility;
@@ -45,6 +46,7 @@ namespace HidSharp.Platform.Windows
         //  http://www.rpi.edu/dept/cis/software/g77-mingw32/include/winioctl.h
         // and Google.
         public const int DICS_FLAG_GLOBAL = 1;
+        public const int DIF_REMOVE = 5;
         public const int DIREG_DEV = 1;
         public const int ERROR_GEN_FAILURE = 31;
         public const int ERROR_HANDLE_EOF = 38;
@@ -315,6 +317,13 @@ namespace HidSharp.Platform.Windows
             public SetupPacket SetupPacket;
         }
 
+        public const int USB_DESCRIPTOR_REQUEST_AND_STRING_BYTES = 256;
+        public struct USB_DESCRIPTOR_REQUEST_AND_STRING_DATA
+        {
+            public USB_DESCRIPTOR_REQUEST Descriptor;
+            public fixed byte Data[USB_DESCRIPTOR_REQUEST_AND_STRING_BYTES];
+        }
+
         public struct SP_DEVINFO_DATA
         {
             public int Size;
@@ -408,7 +417,7 @@ namespace HidSharp.Platform.Windows
 
             fixed ushort Reserved2[5];
 
-            public uint VALUE_UnitsExp;
+            public int VALUE_UnitsExp;
             public uint VALUE_Units;
 
             public int VALUE_LogicalMin;
@@ -926,10 +935,14 @@ namespace HidSharp.Platform.Windows
 
                     if (win32Error == ERROR_OPERATION_ABORTED)
                     {
-                        throw new TimeoutException("Operation timed out.");
+                        throw new TimeoutException(
+                            string.Format("Operation timed out ({0} ms).", eventTimeout)
+                            );
                     }
 
-                    throw new IOException("Operation failed after some time.", new Win32Exception());
+                    throw new IOException(
+                        string.Format("Operation failed after some time ({0} ms).", eventTimeout)
+                        , new Win32Exception());
                 }
 
                 bytesTransferred = 0;
@@ -996,6 +1009,10 @@ namespace HidSharp.Platform.Windows
 
         [DllImport("user32.dll")]
         public static extern int GetMessage(out MSG message, IntPtr window, uint messageMin, uint messageMax);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -1113,6 +1130,10 @@ namespace HidSharp.Platform.Windows
         [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
         public static extern HDEVINFO SetupDiGetClassDevs
             ([MarshalAs(UnmanagedType.LPStruct)] Guid classGuid, string enumerator, IntPtr hwndParent, DIGCF flags);
+
+        [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetupDiCallClassInstaller(uint installFunction, HDEVINFO deviceInfoSet, ref SP_DEVINFO_DATA deviceInfoData);
 
         [DllImport("setupapi.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -1311,6 +1332,274 @@ namespace HidSharp.Platform.Windows
                 {
                     NativeMethods.SetupDiDestroyDeviceInfoList(devInfo);
                 }
+            }
+        }
+
+        public static bool TryGetDeviceUsbRoot(string deviceID, out uint devInst)
+        {
+            devInst = 0; bool found = false;
+
+            if (0 == NativeMethods.CM_Locate_DevNode(out devInst, deviceID))
+            {
+                int vendorID, productID;
+                if (TryMatchUsbDeviceID(devInst, out vendorID, out productID))
+                {
+                    // Get the USB root of the device.
+                    while (true)
+                    {
+                        uint parentDevInst;
+                        if (0 != NativeMethods.CM_Get_Parent(out parentDevInst, devInst)) { break; }
+
+                        int parentVendorID, parentProductID;
+                        if (!TryMatchUsbDeviceID(parentDevInst, out parentVendorID, out parentProductID)) { break; }
+                        if (parentVendorID != vendorID || parentProductID != productID) { break; }
+
+                        devInst = parentDevInst; found = true;
+                    }
+                }
+            }
+
+            return found;
+        }
+
+        public static bool TryMatchUsbDeviceID(uint devInst, out int vendorID, out int productID)
+        {
+            string deviceID;
+            if (0 == NativeMethods.CM_Get_Device_ID(devInst, out deviceID))
+            {
+                if (WinDeviceID.TryMatchUsb(deviceID, out vendorID, out productID) ||
+                    WinDeviceID.TryMatchHid(deviceID, out vendorID, out productID))
+                {
+                    return true;
+                }
+            }
+
+            vendorID = 0; productID = 0; return false;
+        }
+
+        public static List<string> GetDevicePaths(uint devInst, Guid guid)
+        {
+            var devicePaths = new List<string>();
+
+            string deviceID;
+            if (0 != NativeMethods.CM_Get_Device_ID(devInst, out deviceID)) { return devicePaths; }
+
+            NativeMethods.HDEVINFO devInfo = NativeMethods.SetupDiGetClassDevs(
+                guid, deviceID, IntPtr.Zero,
+                NativeMethods.DIGCF.DeviceInterface | NativeMethods.DIGCF.Present
+                );
+
+            if (devInfo.IsValid)
+            {
+                try
+                {
+                    NativeMethods.SP_DEVINFO_DATA dvi = new NativeMethods.SP_DEVINFO_DATA();
+                    dvi.Size = Marshal.SizeOf(dvi);
+
+                    for (int j = 0; NativeMethods.SetupDiEnumDeviceInfo(devInfo, j, ref dvi); j++)
+                    {
+                        NativeMethods.SP_DEVICE_INTERFACE_DATA did = new NativeMethods.SP_DEVICE_INTERFACE_DATA();
+                        did.Size = Marshal.SizeOf(did);
+
+                        for (int k = 0; NativeMethods.SetupDiEnumDeviceInterfaces(devInfo, ref dvi, guid, k, ref did); k++)
+                        {
+                            string devicePath;
+                            if (NativeMethods.SetupDiGetDeviceInterfaceDevicePath(devInfo, ref did, out devicePath))
+                            {
+                                devicePaths.Add(devicePath);
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    NativeMethods.SetupDiDestroyDeviceInfoList(devInfo);
+                }
+            }
+
+            return devicePaths;
+        }
+
+        public delegate bool UsbPortDetailsCallback(IntPtr handle, USB_NODE_CONNECTION_INFORMATION nci, string devicePath, int N);
+        public static void GetUsbPortDetails(string deviceID, UsbPortDetailsCallback callback)
+        {
+            uint devInst;
+            if (NativeMethods.TryGetDeviceUsbRoot(deviceID, out devInst))
+            {
+                char* buffer = stackalloc char[1024]; uint length = 2048;
+                if (0 == NativeMethods.CM_Get_DevNode_Registry_Property(devInst, NativeMethods.CM_DRP_DRIVER, null, buffer, ref length, 0))
+                {
+                    var targetName = new string(buffer, 0, (int)(length >> 1)).TrimEnd('\0');
+
+                    uint parentDevInst;
+                    if (0 == NativeMethods.CM_Get_Parent(out parentDevInst, devInst))
+                    {
+                        var devicePaths = NativeMethods.GetDevicePaths(parentDevInst, NativeMethods.GuidForUsbHub);
+
+                        foreach (var devicePath in devicePaths)
+                        {
+                            var handle = NativeMethods.CreateFileFromDevice(devicePath, NativeMethods.EFileAccess.None, NativeMethods.EFileShare.Read | NativeMethods.EFileShare.Write);
+                            if (handle != (IntPtr)(-1))
+                            {
+                                try
+                                {
+                                    for (uint N = 1; ; N++)
+                                    {
+                                        var nci = new NativeMethods.USB_NODE_CONNECTION_INFORMATION() { ConnectionIndex = N };
+                                        var nciSize = (uint)sizeof(NativeMethods.USB_NODE_CONNECTION_INFORMATION);
+
+                                        uint bytesReturned;
+                                        if (!NativeMethods.DeviceIoControl(handle, NativeMethods.IOCTL_USB_GET_NODE_CONNECTION_INFORMATION,
+                                                                           &nci, nciSize, &nci, nciSize, out bytesReturned, null)) { break; }
+
+                                        if (nci.ConnectionStatus == NativeMethods.USB_CONNECTION_STATUS.DeviceConnected)
+                                        {
+                                            var ncn = new NativeMethods.USB_NODE_CONNECTION_DRIVERKEY_NAME() { ConnectionIndex = N };
+                                            var ncnSize = (uint)sizeof(NativeMethods.USB_NODE_CONNECTION_DRIVERKEY_NAME);
+
+                                            if (NativeMethods.DeviceIoControl(handle, NativeMethods.IOCTL_USB_GET_NODE_CONNECTION_DRIVERKEY_NAME,
+                                                                              &ncn, ncnSize, &ncn, ncnSize, out bytesReturned, null))
+                                            {
+                                                if (ncn.ActualLength > 12)
+                                                {
+                                                    var thisName = new string(ncn.NodeName, 0, (int)((ncn.ActualLength - 12) >> 1));
+                                                    if (thisName == targetName)
+                                                    {
+                                                        if (callback(handle, nci, devicePath, (int)N))
+                                                        {
+                                                            return;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                finally
+                                {
+                                    NativeMethods.CloseHandle(handle);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        public enum UsbStringType
+        {
+            Manufacturer,
+            Product,
+            SerialNumber
+        }
+        public static bool TryGetUsbString(string deviceID, UsbStringType stringType, out byte[] bytes)
+        {
+            byte[] bytes_ = null; bool found = false;
+
+            NativeMethods.GetUsbPortDetails(deviceID, (handle, ncn, devicePath, portNumber) =>
+            {
+                byte stringIndex = 0;
+
+                switch (stringType)
+                {
+                    case UsbStringType.Manufacturer: stringIndex = ncn.DeviceDescriptor.iManufacturer; break;
+                    case UsbStringType.Product: stringIndex = ncn.DeviceDescriptor.iProduct; break;
+                    case UsbStringType.SerialNumber: stringIndex = ncn.DeviceDescriptor.iSerialNumber; break;
+                }
+
+                if (stringIndex == 0)
+                {
+                    // No serial number.
+                    found = true; return true;
+                }
+
+                { //
+                    var r = new NativeMethods.USB_DESCRIPTOR_REQUEST_AND_STRING_DATA();
+                    var rsize = (uint)sizeof(NativeMethods.USB_DESCRIPTOR_REQUEST_AND_STRING_DATA);
+                    r.Descriptor.ConnectionIndex = (uint)portNumber;
+                    r.Descriptor.SetupPacket.bmRequest = 0x80;
+                    r.Descriptor.SetupPacket.bRequest = 0x06;
+                    r.Descriptor.SetupPacket.wValue = (ushort)(3 << 8 | stringIndex);
+                    r.Descriptor.SetupPacket.wIndex = 0; // Language ID
+                    r.Descriptor.SetupPacket.wLength = NativeMethods.USB_DESCRIPTOR_REQUEST_AND_STRING_BYTES;
+
+                    uint bytesReturned;
+                    if (NativeMethods.DeviceIoControl(handle, NativeMethods.IOCTL_USB_GET_DESCRIPTOR_FROM_NODE_CONNECTION,
+                                                      &r, rsize, &r, rsize, out bytesReturned, null))
+                    {
+                        if (bytesReturned >= (uint)sizeof(NativeMethods.USB_DESCRIPTOR_REQUEST) + 2)
+                        {
+                            bytesReturned -= (uint)sizeof(NativeMethods.USB_DESCRIPTOR_REQUEST);
+
+                            byte* d = r.Data;
+                            if (d[0] == bytesReturned && d[1] == 3)
+                            {
+                                bytes_ = new byte[bytesReturned - 2];
+                                Marshal.Copy((IntPtr)(void*)&d[2], bytes_, 0, bytes_.Length);
+                                found = true; return true;
+                            }
+                        }
+                    }
+                }
+                found = false; return true;
+            });
+
+            bytes = bytes_; return found;
+        }
+
+        public static bool TryGetUsbString(string deviceID, UsbStringType stringType, out string @string)
+        {
+            byte[] bytes;
+            if (TryGetUsbString(deviceID, stringType, out bytes))
+            {
+                if (bytes == null)
+                {
+                    @string = null; return true;
+                }
+                else if (0 == (bytes.Length & 1))
+                {
+                    @string = Encoding.Unicode.GetString(bytes);
+                    return true;
+                }
+            }
+
+            @string = null; return false;
+        }
+
+        static readonly object GetUsbStringNone = new object();
+        public static string GetUsbString(Device device, string deviceID, ref object obj, GetStringFlags flags, NativeMethods.UsbStringType stringType)
+        {
+            object o = obj;
+            if (o == null || 0 != (flags & GetStringFlags.Uncached))
+            {
+                string s;
+                if (!NativeMethods.TryGetUsbString(deviceID, stringType, out s)) { throw DeviceException.CreateIOException(device, GetUsbStringErrorForFailure(stringType)); }
+                if (s == null) { obj = o = GetUsbStringNone; } else { obj = o = s; }
+            }
+
+            if (o == GetUsbStringNone) { throw DeviceException.CreateIOException(device, GetUsbStringErrorForNoString(stringType)); }
+            return (string)o;
+        }
+
+        static string GetUsbStringErrorForFailure(NativeMethods.UsbStringType stringType)
+        {
+            switch (stringType)
+            {
+                case NativeMethods.UsbStringType.Manufacturer: return "Failed to get manufacturer.";
+                case NativeMethods.UsbStringType.Product: return "Failed to get product.";
+                case NativeMethods.UsbStringType.SerialNumber: return "Failed to get serial number.";
+                default: throw new ArgumentException();
+            }
+        }
+
+        static string GetUsbStringErrorForNoString(NativeMethods.UsbStringType stringType)
+        {
+            switch (stringType)
+            {
+                case NativeMethods.UsbStringType.Manufacturer: return "No manufacturer string.";
+                case NativeMethods.UsbStringType.Product: return "No product string.";
+                case NativeMethods.UsbStringType.SerialNumber: return "No serial number.";
+                default: throw new ArgumentException();
             }
         }
 

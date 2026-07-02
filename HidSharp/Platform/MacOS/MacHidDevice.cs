@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2012-2015, 2018 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2012-2015, 2018 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -142,19 +142,19 @@ namespace HidSharp.Platform.MacOS
             return _maxFeature;
         }
 
-        public override string GetManufacturer()
+        public override string GetManufacturer(GetStringFlags flags)
         {
             if (_manufacturer == null) { throw DeviceException.CreateIOException(this, "Unnamed manufacturer."); }
             return _manufacturer;
         }
 
-        public override string GetProductName()
+        public override string GetProductName(GetStringFlags flags)
         {
             if (_productName == null) { throw DeviceException.CreateIOException(this, "Unnamed product."); }
             return _productName;
         }
 
-        public override string GetSerialNumber()
+        public override string GetSerialNumber(GetStringFlags flags)
         {
             if (_serialNumber == null) { throw DeviceException.CreateIOException(this, "No serial number."); }
             return _serialNumber;

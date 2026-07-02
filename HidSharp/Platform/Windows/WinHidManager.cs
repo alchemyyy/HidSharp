@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2012-2013 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2012-2013 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -110,9 +110,8 @@ namespace HidSharp.Platform.Windows
         static volatile bool _notifyThreadShouldNotify;
         static volatile bool _notifyThreadShuttingDown;
 
-        static object _hidNotifyObject;
-        static object _serNotifyObject;
-        static object _bleNotifyObject;
+        static object _notifyObjectHidOrSer;
+        static object _notifyObjectBLE;
 
         static object[] _hidDeviceKeysCache;
         static object[] _serDeviceKeysCache;
@@ -150,6 +149,12 @@ namespace HidSharp.Platform.Windows
 #if BLUETOOTH_NOTIFY
         struct BleRadio { public IntPtr NotifyHandle, RadioHandle; }
 #endif
+        static IntPtr _hwnd;
+        static void TerminateUnmanagedPInvoke(object sender, EventArgs e)
+        {
+            if (_hwnd != IntPtr.Zero) { NativeMethods.DestroyWindow(_hwnd); _hwnd = IntPtr.Zero; }
+        }
+
         protected override void Run(Action readyCallback)
         {
             const string className = "HidSharpDeviceMonitor";
@@ -201,13 +206,17 @@ namespace HidSharp.Platform.Windows
             _serialWatcherThread = new Thread(SerialWatcherThread) { IsBackground = true, Name = "HidSharp Serial Watcher" };
             _serialWatcherThread.Start();
 
-            _hidNotifyObject = new object();
-            _serNotifyObject = new object();
-            _bleNotifyObject = new object();
+            //_hidNotifyObject = new object();
+            _notifyObjectHidOrSer = new object();
+            _notifyObjectBLE = new object();
             _notifyThread = new Thread(DeviceMonitorEventThread) { IsBackground = true, Name = "HidSharp RaiseChanged" };
             _notifyThread.Start();
 
             readyCallback();
+
+            _hwnd = hwnd;
+            if (AppDomain.CurrentDomain.IsDefaultAppDomain()) { AppDomain.CurrentDomain.ProcessExit += TerminateUnmanagedPInvoke; }
+            else                                              { AppDomain.CurrentDomain.DomainUnload += TerminateUnmanagedPInvoke; }
 
             NativeMethods.MSG msg;
             while (true)
@@ -218,6 +227,7 @@ namespace HidSharp.Platform.Windows
                 NativeMethods.TranslateMessage(ref msg);
                 NativeMethods.DispatchMessage(ref msg);
             }
+            _hwnd = IntPtr.Zero;
 
             //lock (_bleDiscoveryThread) { _bleDiscoveryShuttingDown = true; Monitor.Pulse(_bleDiscoveryThread); }
             lock (_notifyThread) { _notifyThreadShuttingDown = true; Monitor.Pulse(_notifyThread); }
@@ -285,11 +295,11 @@ namespace HidSharp.Platform.Windows
 
                         if (diEventArgs->ClassGuid == NativeMethods.HidD_GetHidGuid())
                         {
-                            DeviceListDidChange(ref _hidNotifyObject);
+                            DeviceListDidChange(ref _notifyObjectHidOrSer);
                         }
                         else if (diEventArgs->ClassGuid == NativeMethods.GuidForBluetoothLEDevice)
                         {
-                            DeviceListDidChange(ref _bleNotifyObject);
+                            DeviceListDidChange(ref _notifyObjectBLE);
                         }
                     }
                 }
@@ -374,7 +384,7 @@ namespace HidSharp.Platform.Windows
 
                                 case NativeMethods.WAIT_OBJECT_1:
                                     HidSharpDiagnostics.Trace("Received a serial change event.");
-                                    DeviceListDidChange(ref _serNotifyObject); break;
+                                    DeviceListDidChange(ref _notifyObjectHidOrSer); break;
                             }
                         }
                     }
@@ -536,7 +546,7 @@ namespace HidSharp.Platform.Windows
             object notifyObject;
             lock (_notifyThread)
             {
-                notifyObject = _bleNotifyObject;
+                notifyObject = _notifyObjectBLE;
                 if (notifyObject == _bleDeviceKeysCacheNotifyObject) { return _bleDeviceKeysCache; }
             }
 
@@ -582,7 +592,7 @@ namespace HidSharp.Platform.Windows
             object notifyObject;
             lock (_notifyThread)
             {
-                notifyObject = _hidNotifyObject;
+                notifyObject = _notifyObjectHidOrSer;
                 if (notifyObject == _hidDeviceKeysCacheNotifyObject) { return _hidDeviceKeysCache; }
             }
 
@@ -612,7 +622,7 @@ namespace HidSharp.Platform.Windows
             object notifyObject;
             lock (_notifyThread)
             {
-                notifyObject = _serNotifyObject;
+                notifyObject = _notifyObjectHidOrSer;
                 if (notifyObject == _serDeviceKeysCacheNotifyObject) { return _serDeviceKeysCache; }
             }
 
@@ -660,8 +670,20 @@ namespace HidSharp.Platform.Windows
         protected override bool TryCreateSerialDevice(object key, out Device device)
         {
             var path = (SerialDevicePath)key;
-            device = WinSerialDevice.TryCreate(path.DevicePath, path.FileSystemName, path.FriendlyName); return true;
+            device = WinSerialDevice.TryCreate(path.DeviceID, path.DevicePath, path.FileSystemName, path.FriendlyName); return true;
         }
+
+#if !NETSTANDARD
+        public override void UninstallDevice(int vendorID, int productID, DeviceUninstallOptions options)
+        {
+            WinDeviceUninstall.UninstallDevice(vendorID, productID, options);
+        }
+
+        public override bool CanUninstallDevices
+        {
+            get { return true; }
+        }
+#endif
 
         public override bool AreDriversBeingInstalled
         {

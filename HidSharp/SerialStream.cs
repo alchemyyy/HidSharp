@@ -1,5 +1,5 @@
 ﻿#region License
-/* Copyright 2017 James F. Bellinger <http://www.zer7.com/software/hidsharp>
+/* Copyright 2017 James F. Bellinger <http://software.seekye.com/hidsharp>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
+using HidSharp.Utility;
 
 namespace HidSharp
 {
@@ -26,6 +27,7 @@ namespace HidSharp
     /// </summary>
     public abstract class SerialStream : DeviceStream
     {
+        Encoding _encoding;
         string _newLine;
 
         /// <exclude/>
@@ -35,6 +37,7 @@ namespace HidSharp
             ReadTimeout = 3000;
             WriteTimeout = 3000;
 
+            Encoding = Encoding.UTF8;
             NewLine = "\r\n";
             BaudRate = SerialSettings.Default.BaudRate;
             DataBits = SerialSettings.Default.DataBits;
@@ -70,7 +73,8 @@ namespace HidSharp
             }
 
             @bytes.RemoveRange(bytes.Count - matchBytes, matchBytes);
-            return Encoding.GetString(@bytes.ToArray());
+            string s = Encoding.GetString(@bytes.ToArray());
+            return s;
         }
 
         [Obfuscation(Exclude = true)]
@@ -92,6 +96,13 @@ namespace HidSharp
         {
             Throw.If.Null(s, "s");
             Write(s + NewLine);
+
+#if DEBUG
+            if (HidSharpDiagnostics.EnableTracing)
+            {
+                HidSharpDiagnostics.Trace("Serial WriteLine: {0}", s);
+            }
+#endif
         }
 
         public abstract int BaudRate
@@ -118,9 +129,14 @@ namespace HidSharp
             set;
         }
 
-        Encoding Encoding
+        public Encoding Encoding
         {
-            get { return Encoding.UTF8; }
+            get { return _encoding; }
+            set
+            {
+                Throw.If.Null(value, "Encoding");
+                _encoding = value;
+            }
         }
 
         public string NewLine
