@@ -1,0 +1,16 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="Mixed Platforms" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="HidSharp.Test/HidSharp.Test.csproj">
+    <Build Solution="*|x86" Project="false" />
+  </Project>
+  <Project Path="HidSharp/HidSharp.csproj">
+    <Build Solution="*|x86" Project="false" />
+  </Project>
+  <Properties Name="MonoDevelopProperties">
+    <Property Name="StartupItem" Value="HidSharp.Test\HidSharp.Test.csproj" />
+  </Properties>
+</Solution>
