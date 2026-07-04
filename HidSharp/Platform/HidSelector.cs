@@ -26,17 +26,23 @@ namespace HidSharp.Platform
 
         static HidSelector()
         {
-            foreach (var hidManager in new HidManager[]
-                {
-                    new Windows.WinHidManager(),
-                    new Linux.LinuxHidManager(),
-                    new MacOS.MacHidManager(),
-                    new Unsupported.UnsupportedHidManager()
-                })
+            HidManager[] hidManagers = new HidManager[]
+            {
+#if WINDOWS
+                new Windows.WinHidManager(),
+#else
+                new Windows.WinHidManager(),
+                new Linux.LinuxHidManager(),
+                new MacOS.MacHidManager(),
+#endif
+                new Unsupported.UnsupportedHidManager()
+            };
+
+            foreach (HidManager hidManager in hidManagers)
             {
                 if (hidManager.IsSupported)
                 {
-                    var readyEvent = new ManualResetEvent(false);
+                    ManualResetEvent readyEvent = new ManualResetEvent(false);
 
                     Instance = hidManager;
                     Instance.InitializeEventManager();
