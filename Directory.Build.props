@@ -1,5 +1,8 @@
 <Project>
   <PropertyGroup>
     <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\obj\</BaseIntermediateOutputPath>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
   </PropertyGroup>
 </Project>
